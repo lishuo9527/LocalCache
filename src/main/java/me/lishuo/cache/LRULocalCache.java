@@ -21,31 +21,13 @@ public class LRULocalCache {
 
     private static final Timer timer;
 
-    /**
-     * 读写锁
-     */
-    private static final ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
-
-    private static final Lock rLock = readWriteLock.readLock();
-
-    private static final Lock wLock = readWriteLock.writeLock();
-
-    /**
-     * 默认缓存容量
-     */
-    private static final int DEFAULT_INITIAL_CAPACITY = 1 << 4;
-
-    /**
-     * 加载因子
-     */
-    private static final float DEFAULT_LOAD_FACTOR = 0.75f;
 
     /**
      * 初始化
      */
     static {
         timer = new Timer();
-        map = new LinkedHashMap<>(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR, true);
+        map = new LRUMap<>();
     }
 
     /**
@@ -55,6 +37,125 @@ public class LRULocalCache {
 
     }
 
+    /**
+     * 基于LRU策略的map
+     *
+     * @param <K>
+     * @param <V>
+     */
+    static class LRUMap<K, V> extends LinkedHashMap<K, V> {
+
+        /**
+         * 读写锁
+         */
+        private final ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+
+        private final Lock rLock = readWriteLock.readLock();
+
+        private final Lock wLock = readWriteLock.writeLock();
+
+        /**
+         * 默认缓存容量
+         */
+        private static final int DEFAULT_INITIAL_CAPACITY = 1 << 4;
+
+        /**
+         * 默认最大缓存容量
+         */
+        private static final int DEFAULT_MAX_CAPACITY = 1 << 30;
+
+        /**
+         * 加载因子
+         */
+        private static final float DEFAULT_LOAD_FACTOR = 0.75f;
+
+        public LRUMap() {
+            this(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR);
+        }
+
+        public LRUMap(int initialCapacity) {
+            this(initialCapacity, DEFAULT_LOAD_FACTOR);
+        }
+
+
+        public V get(String k) {
+            rLock.lock();
+            try {
+                return super.get(k);
+            } finally {
+                rLock.unlock();
+            }
+        }
+
+        public V put(K k, V v) {
+            wLock.lock();
+            try {
+                return super.put(k, v);
+            } finally {
+                wLock.unlock();
+            }
+        }
+
+        public void putAll(Map<? extends K, ? extends V> m) {
+            wLock.lock();
+            try {
+                super.putAll(m);
+            } finally {
+                wLock.unlock();
+            }
+        }
+
+        public V remove(Object k) {
+            wLock.lock();
+            try {
+                return super.remove(k);
+            } finally {
+                wLock.unlock();
+            }
+        }
+
+
+        public boolean containKey(K k) {
+            rLock.lock();
+            try {
+                return super.containsKey(k);
+            } finally {
+                rLock.unlock();
+            }
+        }
+
+        public int size() {
+            rLock.lock();
+            try {
+                return super.size();
+            } finally {
+                rLock.unlock();
+            }
+        }
+
+
+        public void clear() {
+            wLock.lock();
+            try {
+                super.clear();
+            } finally {
+                wLock.unlock();
+            }
+        }
+
+
+        /**
+         * 重写LinkedHashMap中removeEldestEntry方法;
+         * 新增元素的时候,会判断当前map大小是否超过DEFAULT_MAX_CAPACITY,超过则移除map中最老的节点;
+         *
+         * @param eldest
+         * @return
+         */
+        protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+            return size() > DEFAULT_MAX_CAPACITY;
+        }
+
+    }
 
     /**
      * 清除缓存任务类
@@ -79,15 +180,10 @@ public class LRULocalCache {
      * @param value
      */
     public static void add(String key, Object value) {
-        wLock.lock();
-        try {
-            map.put(key, value);
-            timer.schedule(new LocalCache.CleanWorkerTask(key), DEFUALT_TIMEOUT);
-        } finally {
-            wLock.unlock();
-        }
-    }
+        map.put(key, value);
+        timer.schedule(new LocalCache.CleanWorkerTask(key), DEFUALT_TIMEOUT);
 
+    }
 
     /**
      * 增加缓存
@@ -96,14 +192,9 @@ public class LRULocalCache {
      * @param value
      * @param timeout 有效时长
      */
-    public static void add(String key, Object value, int timeout) {
-        wLock.lock();
-        try {
-            map.put(key, value);
-            timer.schedule(new LocalCache.CleanWorkerTask(key), timeout * SECOND_TIME);
-        } finally {
-            wLock.unlock();
-        }
+    public static void put(String key, Object value, int timeout) {
+        map.put(key, value);
+        timer.schedule(new LocalCache.CleanWorkerTask(key), timeout * SECOND_TIME);
     }
 
     /**
@@ -113,65 +204,46 @@ public class LRULocalCache {
      * @param value
      * @param expireTime 过期时间
      */
-    public static void add(String key, Object value, Date expireTime) {
-        wLock.lock();
-        try {
-            map.put(key, value);
+    public static void put(String key, Object value, Date expireTime) {
+        map.put(key, value);
+        timer.schedule(new LocalCache.CleanWorkerTask(key), expireTime);
+    }
+
+
+    /**
+     * 批量增加缓存
+     *
+     * @param m
+     */
+    public static void putAll(Map<String, Object> m) {
+        map.putAll(m);
+        for (String key : m.keySet()) {
+            timer.schedule(new LocalCache.CleanWorkerTask(key), DEFUALT_TIMEOUT);
+        }
+    }
+
+    /**
+     * 批量增加缓存
+     *
+     * @param m
+     */
+    public static void putAll(Map<String, Object> m, int timeout) {
+
+        map.putAll(m);
+        for (String key : m.keySet()) {
+            timer.schedule(new LocalCache.CleanWorkerTask(key), timeout * SECOND_TIME);
+        }
+    }
+
+    /**
+     * 批量增加缓存
+     *
+     * @param m
+     */
+    public static void putAll(Map<String, Object> m, Date expireTime) {
+        map.putAll(m);
+        for (String key : m.keySet()) {
             timer.schedule(new LocalCache.CleanWorkerTask(key), expireTime);
-        } finally {
-            wLock.unlock();
-        }
-    }
-
-
-    /**
-     * 批量增加缓存
-     *
-     * @param m
-     */
-    public static void addAll(Map<String, Object> m) {
-        wLock.lock();
-        try {
-            map.putAll(m);
-            for (String key : m.keySet()) {
-                timer.schedule(new LocalCache.CleanWorkerTask(key), DEFUALT_TIMEOUT);
-            }
-        } finally {
-            wLock.unlock();
-        }
-    }
-
-    /**
-     * 批量增加缓存
-     *
-     * @param m
-     */
-    public static void addAll(Map<String, Object> m, int timeout) {
-        wLock.lock();
-        try {
-            map.putAll(m);
-            for (String key : m.keySet()) {
-                timer.schedule(new LocalCache.CleanWorkerTask(key), timeout * SECOND_TIME);
-            }
-        } finally {
-            wLock.unlock();
-        }
-    }
-
-    /**
-     * 批量增加缓存
-     *
-     * @param m
-     */
-    public static void addAll(Map<String, Object> m, Date expireTime) {
-        wLock.lock();
-        try {
-            map.putAll(m);
-            for (String key : m.keySet()) {
-                timer.schedule(new LocalCache.CleanWorkerTask(key), expireTime);
-            }
-        } finally {
-            wLock.unlock();
         }
     }
 
@@ -182,13 +254,7 @@ public class LRULocalCache {
      * @return
      */
     public static Object get(String key) {
-        rLock.lock();
-        try {
-            return map.get(key);
-        } finally {
-            rLock.unlock();
-        }
-
+        return map.get(key);
     }
 
     /**
@@ -198,13 +264,7 @@ public class LRULocalCache {
      * @return
      */
     public static boolean containsKey(String key) {
-        rLock.lock();
-        try {
-            return map.containsKey(key);
-        } finally {
-            rLock.unlock();
-        }
-
+        return map.containsKey(key);
     }
 
     /**
@@ -213,27 +273,7 @@ public class LRULocalCache {
      * @param key
      */
     public static void remove(String key) {
-        wLock.lock();
-        try {
-            map.remove(key);
-        } finally {
-            wLock.unlock();
-        }
-
-    }
-
-    /**
-     * 删除缓存
-     *
-     * @param o
-     */
-    public static void remove(Object o) {
-        wLock.lock();
-        try {
-            map.remove(o);
-        } finally {
-            wLock.unlock();
-        }
+        map.remove(key);
     }
 
     /**
@@ -242,12 +282,7 @@ public class LRULocalCache {
      * @return
      */
     public static int size() {
-        rLock.lock();
-        try {
-            return map.size();
-        } finally {
-            rLock.unlock();
-        }
+        return map.size();
     }
 
     /**
@@ -256,15 +291,9 @@ public class LRULocalCache {
      * @return
      */
     public static void clear() {
-        wLock.lock();
-        try {
-            if (size() > 0) {
-                map.clear();
-            }
-            timer.cancel();
-        } finally {
-            wLock.unlock();
+        if (size() > 0) {
+            map.clear();
         }
-
+        timer.cancel();
     }
 }

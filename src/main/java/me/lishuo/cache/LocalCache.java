@@ -27,7 +27,7 @@ public class LocalCache {
      */
     static {
         timer = new Timer();
-        map = new ConcurrentHashMap<String, Object>();
+        map = new ConcurrentHashMap<>();
     }
 
     /**
@@ -59,7 +59,7 @@ public class LocalCache {
      * @param key
      * @param value
      */
-    public static void add(String key, Object value) {
+    public static void put(String key, Object value) {
         map.put(key, value);
         timer.schedule(new CleanWorkerTask(key), DEFUALT_TIMEOUT);
     }
@@ -72,8 +72,7 @@ public class LocalCache {
      * @param value
      * @param timeout 有效时长
      */
-    public static void add(String key, Object value, int timeout) {
-
+    public static void put(String key, Object value, int timeout) {
         map.put(key, value);
         timer.schedule(new CleanWorkerTask(key), timeout * SECOND_TIME);
     }
@@ -85,8 +84,7 @@ public class LocalCache {
      * @param value
      * @param expireTime 过期时间
      */
-    public static void add(String key, Object value, Date expireTime) {
-
+    public static void put(String key, Object value, Date expireTime) {
         map.put(key, value);
         timer.schedule(new CleanWorkerTask(key), expireTime);
     }
@@ -97,13 +95,12 @@ public class LocalCache {
      *
      * @param m
      */
-    public static void addAll(Map<String, Object> m) {
+    public static void putAll(Map<String, Object> m) {
         map.putAll(m);
 
         for (String key : m.keySet()) {
             timer.schedule(new CleanWorkerTask(key), DEFUALT_TIMEOUT);
         }
-
     }
 
     /**
@@ -111,13 +108,12 @@ public class LocalCache {
      *
      * @param m
      */
-    public static void addAll(Map<String, Object> m, int timeout) {
+    public static void putAll(Map<String, Object> m, int timeout) {
         map.putAll(m);
 
         for (String key : m.keySet()) {
             timer.schedule(new CleanWorkerTask(key), timeout * SECOND_TIME);
         }
-
     }
 
     /**
@@ -125,13 +121,12 @@ public class LocalCache {
      *
      * @param m
      */
-    public static void addAll(Map<String, Object> m, Date expireTime) {
+    public static void putAll(Map<String, Object> m, Date expireTime) {
         map.putAll(m);
 
         for (String key : m.keySet()) {
             timer.schedule(new CleanWorkerTask(key), expireTime);
         }
-
     }
 
     /**
