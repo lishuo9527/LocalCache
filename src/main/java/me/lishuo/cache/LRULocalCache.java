@@ -70,11 +70,11 @@ public class LRULocalCache {
         private static final float DEFAULT_LOAD_FACTOR = 0.75f;
 
         public LRUMap() {
-            this(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR);
+            super(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR);
         }
 
         public LRUMap(int initialCapacity) {
-            this(initialCapacity, DEFAULT_LOAD_FACTOR);
+            super(initialCapacity, DEFAULT_LOAD_FACTOR);
         }
 
 
